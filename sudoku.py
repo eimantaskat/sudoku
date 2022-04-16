@@ -9,9 +9,6 @@ import copy
 from random import shuffle
 from datetime import datetime
 
-class GridError(Exception):
-    pass
-
 class Sudoku:
     def __init__(self, show_progress=False):
         self.__solution = [ [0]*9 for i in range(9)]
@@ -25,6 +22,9 @@ class Sudoku:
     
     def __del__(self):
         self.__api.End()
+
+    class GridError(Exception):
+        pass
 
     def __now(self):
         return datetime.now().strftime("%H:%M:%S")
@@ -65,7 +65,7 @@ class Sudoku:
         w, h = self.__image.size
         w = w//9*9
         if w < 450:
-            raise GridError("Grid too small")
+            raise self.GridError("Grid too small")
         self.__image = self.__image.resize((w, w))
         w, h = self.__image.size
         self.__process_image()
@@ -159,15 +159,15 @@ class Sudoku:
                     print(self.__now(), "Grid processed")
                 self.__solved = False
             except:
-                raise GridError("Failed to process grid")
+                raise self.GridError("Failed to process grid")
         else:
-            raise GridError("Grid not found")
+            raise self.GridError("Grid not found")
 
     def solve(self):
         if self.__progress:
             print(self.__now(), "Solving sudoku...")
         if not self.__solve():
-            raise GridError("Sudoku is unsolvable")
+            raise self.GridError("Sudoku is unsolvable")
         if self.__progress:
             print(self.__now(), "Sudoku solved")
         self.__solved = True
@@ -216,16 +216,37 @@ class Sudoku:
                 if self.__progress:
                     print(self.__now(), "Writing done")
         else:
-            raise GridError("Sudoku not solved")
+            raise self.GridError("Sudoku not solved")
 
     def print_grid(self):
-        print(np.matrix(self.__grid))
+        print("Grid:")
+        for i in range(len(self.__grid)):
+            for j in range(len(self.__grid[i])):
+                print(self.__grid[i][j], end=" ")
+                if not (j + 1) % 3 and j < 8:
+                    print("|", end=" ")
+            print()
+            if not (i + 1) % 3 and i < 8:
+                print("---------------------")
 
     def print_solution(self):
-        print(np.matrix(self.__solution))
+        if self.__solved:
+            print("Solution:")
+            for i in range(len(self.__solution)):
+                for j in range(len(self.__solution[i])):
+                    print(self.__solution[i][j], end=" ")
+                    if not (j + 1) % 3 and j < 8:
+                        print("|", end=" ")
+                print()
+                if not (i + 1) % 3 and i < 8:
+                    print("---------------------")
+        else:
+            raise self.GridError("Sudoku not solved")
 
 if __name__ == '__main__':
     sudoku = Sudoku(show_progress=True)
     sudoku.get_grid()
     sudoku.solve()
-    sudoku.write_grid(random=True, delay=10)
+    sudoku.print_solution()
+    # sudoku.solve()
+    # sudoku.write_grid(random=True, delay=10)
