@@ -1,27 +1,37 @@
 import pyautogui
 from PIL import Image, ImageGrab
-from itertools import product
 from tesserocr import PyTessBaseAPI
-from string import digits
-import numpy as np
 import keyboard
 import copy
-from random import shuffle
+from string import digits
+from itertools import product
+from random import shuffle, randrange
 from datetime import datetime
 
 class Sudoku:
-    def __init__(self, show_progress=False):
+    def __init__(self, show_progress=False, tessdata_path = "C:/Program Files (x86)/Tesseract-OCR/tessdata"):
+        """
+        Class to generate and solve Sudokus
+
+        Args:
+            show_progress (bool): if True, logs progress to console (default False)
+
+            tessdata_path (string): set path for tesseract data (default C:/Program Files (x86)/Tesseract-OCR/tessdata)
+            
+        """
+        self.__grid = [ [0]*9 for i in range(9)]
         self.__solution = [ [0]*9 for i in range(9)]
         self.__tiles = [ [0]*9 for i in range(9)]
         self.__progress = show_progress
         self.__tlx, self.__tly, self.__brx, self.__bry = -1, -1, -1, -1
         self.__solved = False
 
-        self.__api = PyTessBaseAPI(path="C:/Program Files (x86)/Tesseract-OCR/tessdata")
+        self.__api = PyTessBaseAPI(path=tessdata_path)
         self.__api.SetVariable('tessedit_char_whitelist', digits)
     
     def __del__(self):
-        self.__api.End()
+        if hasattr(self, '__api'):
+            self.__api.End()
 
     class GridError(Exception):
         pass
@@ -100,16 +110,15 @@ class Sudoku:
             for img in line:
                 ln.append(self.__get_num(img))
             self.__grid.append(ln)
-        self.__solution = copy.deepcopy(self.__grid)
 
 
-    def __possible(self, row, col, num):
+    def __possible(self, grid, row, col, num):
         for x in range(9):
-            if self.__solution[row][x] == num:
+            if grid[row][x] == num:
                 return False
                 
         for x in range(9):
-            if self.__solution[x][col] == num:
+            if grid[x][col] == num:
                 return False
     
     
@@ -117,9 +126,23 @@ class Sudoku:
         startCol = col - col % 3
         for i in range(3):
             for j in range(3):
-                if self.__solution[i + startRow][j + startCol] == num:
+                if grid[i + startRow][j + startCol] == num:
                     return False
         return True
+
+    def solutions(self, grid):
+        for y in range(9):
+            for x in range(9):
+                if grid[y][x] == 0:
+                    for n in range(1, 10):
+                        if self.__possible(grid, y, x, n):
+                            grid[y][x] = n
+                            if self.count > 1:
+                                return
+                            self.solutions(grid)
+                            grid[y][x] = 0
+                    return
+        self.count += 1
 
     def __solve(self, row=0, col=0):
         if col == 9:
@@ -132,7 +155,7 @@ class Sudoku:
             return self.__solve(row, col+1)
 
         for num in range(1, 10):
-            if self.__possible(row, col, num):
+            if self.__possible(self.__solution, row, col, num):
                 self.__solution[row][col] = num
 
                 if self.__solve(row, col + 1):
@@ -141,8 +164,64 @@ class Sudoku:
             self.__solution[row][col] = 0
 
         return False
+
+    def __generate(self, difficulity = 0, row=0, col=0):
+        if col == 9:
+            if row == 8:
+                failed = 0
+                l = [[x, y] for x in range(9) for y in range(9)]
+                shuffle(l)
+
+                for _ in range(40 - (int(difficulity**1.2)*5) if difficulity < 5 and difficulity >= 0 else 0 if difficulity >= 0 else 40):
+                    l.pop(randrange(len(l)))
+                
+                removed = 1
+                while removed:
+                    for i in l:
+                        if failed >= len(l) or len(l) == 1:
+                            removed = 0
+                            break
+                        row, col = i[0], i[1]
+                        backup = self.__grid[row][col]
+                        self.__grid[row][col] = 0
+                        copyGrid = copy.deepcopy(self.__grid)
+                        
+                        self.count = 0
+                        self.solutions(copyGrid)
+                        
+                        l.remove(i)
+
+                        if self.count != 1:
+                            self.__grid[row][col] = backup
+                            failed += 1
+                        else:
+                            failed = 0
+                return True
+            row += 1
+            col = 0
+
+        numbers = [x for x in range(1, 10)]
+        shuffle(numbers)
+        for num in numbers:
+            if self.__possible(self.__grid, row, col, num):
+                self.__grid[row][col] = num
+
+                if self.__generate(difficulity, row, col + 1):
+                    return True
+
+            self.__grid[row][col] = 0
+
+        return False
     
     def get_grid(self):
+        """
+        Function to get Sudoku grid from sudoku.com website
+
+        Raises:
+            GridError: Grid not found - program was unable to find grid on screen
+            GridError: Failed to process grid - program was unable to get values from grid image
+            GridError: Grid too small - grid is too small to be accurately processed
+        """
         if self.__progress:
             print(self.__now(), "Searching for grid...")
         self.__locate_grid()
@@ -164,6 +243,13 @@ class Sudoku:
             raise self.GridError("Grid not found")
 
     def solve(self):
+        """
+        Solve currently stored grid
+
+        Raises:
+            GridError: Sudoku is unsolvable - Sudoku has no valid solutions
+        """
+        self.__solution = copy.deepcopy(self.__grid)
         if self.__progress:
             print(self.__now(), "Solving sudoku...")
         if not self.__solve():
@@ -172,7 +258,43 @@ class Sudoku:
             print(self.__now(), "Sudoku solved")
         self.__solved = True
 
+    def generate(self, difficulity = 0):
+        """
+        Function to generate Sudoku grid
+
+        Args:
+            difficulity (int): difficulity of generated Sudoku
+                0 - very easy (~39 empty cells),
+
+                1 - easy (~43 empty cells),
+
+                2 - medium (~47 empty cells),
+
+                3 - hard (~50 empty cells),
+
+                4 - very hard (~54 empty cells),
+
+                5 - extreme (~56 empty cells)
+        """
+        if self.__progress:
+            print(self.__now(), "Generating grid...")
+        self.__generate(difficulity=difficulity)
+        if self.__progress:
+            print(self.__now(), "Grid generated")
+    
+
     def write_grid(self, random=False, vertical=False, delay=100):
+        """
+        Writes currently stored solution to sudoku.com website's grid in lines from left to right
+
+        Args:
+            random (bool): if True, writes numbers in random order (default False)
+            vertical (bool): it True, writes numbers in columns from top to bottom (default False)
+            delay (int): delay in ms to wait between writing numbers (default 100ms)
+
+        Raises:
+            GridError: Sudoku not solved - there is no solved sudoku
+        """
         if self.__solved:
             pyautogui.PAUSE = delay/1000
             if self.__progress:
@@ -219,6 +341,9 @@ class Sudoku:
             raise self.GridError("Sudoku not solved")
 
     def print_grid(self):
+        """
+        Prints currently stored grid to console
+        """
         print("Grid:")
         for i in range(len(self.__grid)):
             for j in range(len(self.__grid[i])):
@@ -230,6 +355,12 @@ class Sudoku:
                 print("---------------------")
 
     def print_solution(self):
+        """
+        Prints currently stored solution to console
+
+        Raises:
+            GridError: Sudoku not solved - there is no solved sudoku
+        """
         if self.__solved:
             print("Solution:")
             for i in range(len(self.__solution)):
@@ -243,10 +374,23 @@ class Sudoku:
         else:
             raise self.GridError("Sudoku not solved")
 
-if __name__ == '__main__':
-    sudoku = Sudoku(show_progress=True)
-    sudoku.get_grid()
-    sudoku.solve()
-    sudoku.print_solution()
-    # sudoku.solve()
-    # sudoku.write_grid(random=True, delay=10)
+    def grid(self):
+        """
+        Returns Sudoku grid
+
+        Returns:
+            grid (2D list): unsolved Sudoku grid
+        """
+        return self.__grid
+
+    def solution(self):
+        """
+        Returns Sudoku solution
+
+        Returns:
+            solution (2D list): solved Sudoku grid
+        """
+        if self.__solved:
+            return self.__solution
+        else:
+            raise self.GridError("Sudoku not solved")

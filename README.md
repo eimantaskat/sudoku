@@ -1,1 +1,1 @@
-# sudoku.com solver
+# Sudoku generator/solver
